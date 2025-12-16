@@ -9,15 +9,15 @@ use std::path::Path;
 use std::sync::Arc;
 use url::Url;
 
-/// Amazon region configuration
+/// Amazon region configuration for cookie-based scraping (legacy)
 #[derive(Debug, Clone)]
-pub struct AmazonRegion {
+pub struct LegacyAmazonRegion {
     pub code: String,
     pub domain: String,
     pub notebook_url: String,
 }
 
-impl AmazonRegion {
+impl LegacyAmazonRegion {
     pub fn from_code(code: &str) -> Result<Self, KindleError> {
         let (domain, notebook_url) = match code.to_lowercase().as_str() {
             "us" => ("amazon.com", "https://read.amazon.com/notebook"),
@@ -43,10 +43,10 @@ impl AmazonRegion {
     }
 }
 
-/// Scrape highlights from Amazon's Kindle Notebook
+/// Scrape highlights from Amazon's Kindle Notebook (legacy cookie-based method)
 pub fn scrape_highlights(
     cookies_path: &Path,
-    region: &AmazonRegion,
+    region: &LegacyAmazonRegion,
 ) -> Result<Vec<Book>, KindleError> {
     if !cookies_path.exists() {
         return Err(KindleError::CookieFileNotFound(cookies_path.to_path_buf()));
@@ -141,7 +141,7 @@ struct BookData {
 }
 
 /// Fetch the list of books from the notebook page
-fn fetch_book_list(client: &Client, region: &AmazonRegion) -> Result<Vec<BookData>, KindleError> {
+fn fetch_book_list(client: &Client, region: &LegacyAmazonRegion) -> Result<Vec<BookData>, KindleError> {
     let response = client.get(&region.notebook_url).send()?;
 
     if !response.status().is_success() {
@@ -218,7 +218,7 @@ fn parse_book_list(html: &str) -> Result<Vec<BookData>, KindleError> {
 /// Fetch highlights for a specific book
 fn fetch_book_highlights(
     client: &Client,
-    region: &AmazonRegion,
+    region: &LegacyAmazonRegion,
     asin: &str,
 ) -> Result<Vec<Highlight>, KindleError> {
     let mut highlights = Vec::new();
@@ -351,14 +351,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_amazon_region() {
-        let us = AmazonRegion::from_code("us").unwrap();
+    fn test_legacy_amazon_region() {
+        let us = LegacyAmazonRegion::from_code("us").unwrap();
         assert_eq!(us.domain, "amazon.com");
 
-        let uk = AmazonRegion::from_code("UK").unwrap();
+        let uk = LegacyAmazonRegion::from_code("UK").unwrap();
         assert_eq!(uk.domain, "amazon.co.uk");
 
-        let invalid = AmazonRegion::from_code("xyz");
+        let invalid = LegacyAmazonRegion::from_code("xyz");
         assert!(invalid.is_err());
     }
 }

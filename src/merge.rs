@@ -113,8 +113,7 @@ fn merge_duplicate_highlight(highlights: &mut Vec<Highlight>, other: Highlight) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{generate_book_id, Location};
-    use chrono::{TimeZone, Utc};
+    use crate::model::{generate_book_id, Location, Source};
 
     fn make_book(title: &str, author: Option<&str>, source: Source) -> Book {
         Book {

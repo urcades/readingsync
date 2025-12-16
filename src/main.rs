@@ -1,10 +1,10 @@
 use bookexport::{
-    apple_books, kindle, merge,
+    apple_books, kindle,
     model::{Library, Source},
     Config, Error,
 };
 use chrono::Utc;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
@@ -13,37 +13,46 @@ use std::path::PathBuf;
 #[command(name = "bookexport")]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     /// Output path for the library JSON file
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     output: Option<PathBuf>,
 
-    /// Config file path
-    #[arg(short, long)]
-    config: Option<PathBuf>,
-
-    /// Only export from Apple Books
-    #[arg(long)]
-    apple_books_only: bool,
-
-    /// Path to Kindle's My Clippings.txt file
-    #[arg(long)]
-    kindle_clippings: Option<PathBuf>,
-
-    /// Path to exported Amazon cookies file (Netscape format)
-    #[arg(long)]
-    kindle_cookies: Option<PathBuf>,
-
-    /// Amazon region: us, uk, de, fr, jp, etc.
-    #[arg(long, default_value = "us")]
-    kindle_region: String,
-
     /// Pretty-print JSON output
-    #[arg(long)]
+    #[arg(long, global = true)]
     pretty: bool,
 
     /// Verbose logging
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     verbose: bool,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Sync highlights from Kindle via browser (recommended)
+    #[command(name = "kindle")]
+    KindleSync {
+        /// Amazon region: us, uk, de, fr, jp, etc.
+        #[arg(long, default_value = "us")]
+        region: String,
+
+        /// Run browser in headless mode (no visible window)
+        #[arg(long)]
+        headless: bool,
+    },
+
+    /// Export from Apple Books only
+    #[command(name = "apple-books")]
+    AppleBooks,
+
+    /// Legacy: use My Clippings.txt file from Kindle device
+    #[command(name = "clippings")]
+    Clippings {
+        /// Path to My Clippings.txt file
+        path: PathBuf,
+    },
 }
 
 fn main() {
@@ -57,124 +66,38 @@ fn run() -> Result<(), Error> {
     let args = Args::parse();
 
     // Load config
-    let mut config = if let Some(config_path) = &args.config {
-        Config::load(config_path).map_err(Error::Config)?
-    } else {
-        Config::load_default()
-    };
-    config.expand_paths();
+    let config = Config::load_default();
 
     // Determine output path
-    let output_path = args.output.unwrap_or(config.output_path.clone());
+    let output_path = args.output.unwrap_or_else(|| {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("bookexport")
+            .join("library.json")
+    });
 
     if args.verbose {
         eprintln!("Output path: {}", output_path.display());
     }
 
-    // Collect books from all sources
-    let mut book_lists = Vec::new();
-
-    // Apple Books
-    if config.apple_books.enabled && !args.kindle_clippings.is_some() || !args.apple_books_only {
-        if args.verbose {
-            eprintln!("Extracting from Apple Books...");
+    // Handle commands
+    let books = match args.command {
+        Some(Commands::KindleSync { region, headless }) => {
+            run_kindle_browser_sync(&region, headless, args.verbose)?
         }
-
-        match apple_books::extract_full(
-            config.apple_books.library_db.clone(),
-            config.apple_books.annotation_db.clone(),
-        ) {
-            Ok(books) => {
-                if args.verbose {
-                    let highlight_count: usize = books.iter().map(|b| b.highlights.len()).sum();
-                    eprintln!(
-                        "  Found {} books with {} highlights",
-                        books.len(),
-                        highlight_count
-                    );
-                }
-                book_lists.push(books);
-            }
-            Err(e) => {
-                if args.verbose {
-                    eprintln!("  Warning: Failed to extract from Apple Books: {}", e);
-                }
-            }
+        Some(Commands::AppleBooks) => {
+            run_apple_books_export(&config, args.verbose)?
         }
-    }
-
-    // Kindle - My Clippings.txt
-    if !args.apple_books_only {
-        let clippings_path = args
-            .kindle_clippings
-            .or(config.kindle.clippings_path.clone());
-
-        if let Some(path) = clippings_path {
-            if args.verbose {
-                eprintln!("Parsing Kindle clippings from {}...", path.display());
-            }
-
-            match kindle::parse_clippings(&path) {
-                Ok(books) => {
-                    if args.verbose {
-                        let highlight_count: usize = books.iter().map(|b| b.highlights.len()).sum();
-                        eprintln!(
-                            "  Found {} books with {} highlights",
-                            books.len(),
-                            highlight_count
-                        );
-                    }
-                    book_lists.push(books);
-                }
-                Err(e) => {
-                    if args.verbose {
-                        eprintln!("  Warning: Failed to parse clippings: {}", e);
-                    }
-                }
-            }
+        Some(Commands::Clippings { path }) => {
+            run_clippings_import(&path, args.verbose)?
         }
-    }
-
-    // Kindle - Amazon Notebook scraping
-    if !args.apple_books_only {
-        let cookies_path = args.kindle_cookies.or(config.kindle.cookies_path.clone());
-
-        if let Some(path) = cookies_path {
-            if args.verbose {
-                eprintln!("Scraping Amazon Notebook...");
-            }
-
-            let region = kindle::AmazonRegion::from_code(&args.kindle_region)
-                .or_else(|_| kindle::AmazonRegion::from_code(&config.kindle.region))
-                .map_err(Error::Kindle)?;
-
-            match kindle::scrape_highlights(&path, &region) {
-                Ok(books) => {
-                    if args.verbose {
-                        let highlight_count: usize = books.iter().map(|b| b.highlights.len()).sum();
-                        eprintln!(
-                            "  Found {} books with {} highlights",
-                            books.len(),
-                            highlight_count
-                        );
-                    }
-                    book_lists.push(books);
-                }
-                Err(e) => {
-                    if args.verbose {
-                        eprintln!("  Warning: Failed to scrape Amazon Notebook: {}", e);
-                    }
-                }
-            }
+        None => {
+            // Default: run Kindle browser sync
+            eprintln!("No command specified. Running Kindle sync...");
+            eprintln!("(Use --help to see all options)\n");
+            run_kindle_browser_sync("us", false, args.verbose)?
         }
-    }
-
-    // Merge books from all sources
-    if args.verbose {
-        eprintln!("Merging books from {} sources...", book_lists.len());
-    }
-
-    let books = merge::merge_books(book_lists);
+    };
 
     // Create library
     let library = Library {
@@ -184,22 +107,22 @@ fn run() -> Result<(), Error> {
 
     // Summary
     let total_highlights: usize = library.books.iter().map(|b| b.highlights.len()).sum();
-    let apple_books_count = library
-        .books
-        .iter()
-        .filter(|b| b.sources.contains(&Source::AppleBooks))
-        .count();
     let kindle_count = library
         .books
         .iter()
         .filter(|b| b.sources.contains(&Source::Kindle))
         .count();
+    let apple_count = library
+        .books
+        .iter()
+        .filter(|b| b.sources.contains(&Source::AppleBooks))
+        .count();
 
     eprintln!(
-        "Exported {} books ({} from Apple Books, {} from Kindle) with {} total highlights",
+        "\nExported {} books ({} Kindle, {} Apple Books) with {} total highlights",
         library.books.len(),
-        apple_books_count,
         kindle_count,
+        apple_count,
         total_highlights
     );
 
@@ -220,4 +143,65 @@ fn run() -> Result<(), Error> {
     eprintln!("Written to {}", output_path.display());
 
     Ok(())
+}
+
+/// Run Kindle browser-based sync
+fn run_kindle_browser_sync(region: &str, headless: bool, verbose: bool) -> Result<Vec<bookexport::Book>, Error> {
+    eprintln!("Starting Kindle sync via browser...");
+
+    let region = kindle::AmazonRegion::from_code(region).map_err(Error::Kindle)?;
+
+    let config = kindle::BrowserConfig {
+        headless,
+        region,
+        user_data_dir: None, // Will use default with session persistence
+        timeout_secs: 30,
+    };
+
+    let scraper = kindle::KindleBrowserScraper::with_session_persistence(config)
+        .map_err(|e| Error::Kindle(e))?;
+
+    let books = scraper.scrape_all().map_err(Error::Kindle)?;
+
+    if verbose {
+        let highlight_count: usize = books.iter().map(|b| b.highlights.len()).sum();
+        eprintln!("Found {} books with {} highlights", books.len(), highlight_count);
+    }
+
+    Ok(books)
+}
+
+/// Run Apple Books export
+fn run_apple_books_export(config: &Config, verbose: bool) -> Result<Vec<bookexport::Book>, Error> {
+    if verbose {
+        eprintln!("Extracting from Apple Books...");
+    }
+
+    let books = apple_books::extract_full(
+        config.apple_books.library_db.clone(),
+        config.apple_books.annotation_db.clone(),
+    ).map_err(Error::AppleBooks)?;
+
+    if verbose {
+        let highlight_count: usize = books.iter().map(|b| b.highlights.len()).sum();
+        eprintln!("Found {} books with {} highlights", books.len(), highlight_count);
+    }
+
+    Ok(books)
+}
+
+/// Run My Clippings.txt import
+fn run_clippings_import(path: &PathBuf, verbose: bool) -> Result<Vec<bookexport::Book>, Error> {
+    if verbose {
+        eprintln!("Parsing Kindle clippings from {}...", path.display());
+    }
+
+    let books = kindle::parse_clippings(path).map_err(Error::Kindle)?;
+
+    if verbose {
+        let highlight_count: usize = books.iter().map(|b| b.highlights.len()).sum();
+        eprintln!("Found {} books with {} highlights", books.len(), highlight_count);
+    }
+
+    Ok(books)
 }
