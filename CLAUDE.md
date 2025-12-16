@@ -2,38 +2,54 @@
 
 ## What is this project?
 
-`bookexport` is a Rust CLI tool that extracts reading highlights from Apple Books and Kindle on macOS, merges/deduplicates books across sources, and outputs a unified JSON file.
+`bookexport` is a Rust CLI tool that extracts reading highlights from Kindle and Apple Books on macOS, merges/deduplicates books across sources, and outputs a unified JSON file.
 
 ## Project Structure
 
 ```
 bookexport/
 ├── Cargo.toml              # Dependencies and project metadata
-├── CLAUDE.md               # This file
+├── Cargo.lock              # Locked dependency versions
+├── README.md               # User documentation
+├── CLAUDE.md               # This file (development reference)
 └── src/
-    ├── main.rs             # CLI entry point, argument parsing, orchestration
+    ├── main.rs             # CLI entry point with subcommands
     ├── lib.rs              # Library re-exports
     ├── model.rs            # Data structures (Library, Book, Highlight, Source, Location)
     ├── error.rs            # Error types (AppleBooksError, KindleError, ConfigError)
     ├── apple_books.rs      # Apple Books SQLite extraction
     ├── kindle/
     │   ├── mod.rs          # Kindle module exports
+    │   ├── browser.rs      # Headless Chrome browser scraper (primary method)
     │   ├── clippings.rs    # My Clippings.txt parser
-    │   └── scraper.rs      # Amazon Notebook web scraper
+    │   └── scraper.rs      # Legacy cookie-based web scraper
     ├── merge.rs            # Book/highlight deduplication logic
     └── config.rs           # TOML config file support
 ```
 
+## CLI Commands
+
+```bash
+# Primary: Browser-based Kindle sync
+bookexport kindle --region us [--headless] [--verbose]
+
+# Apple Books export
+bookexport apple-books [--verbose]
+
+# Kindle device clippings import
+bookexport clippings <PATH> [--verbose]
+```
+
+Global flags: `-o/--output`, `--pretty`, `-v/--verbose`
+
 ## Data Model
 
 ```rust
-// The complete export
 struct Library {
     exported_at: DateTime<Utc>,
     books: Vec<Book>,
 }
 
-// A book with metadata and highlights
 struct Book {
     id: String,                    // SHA256(lowercase(title + author))[:16]
     title: String,
@@ -44,9 +60,8 @@ struct Book {
     finished_at: Option<DateTime<Utc>>,
 }
 
-// A single highlight/annotation
 struct Highlight {
-    id: String,                    // From source DB or generated UUID
+    id: String,                    // UUID
     text: String,
     note: Option<String>,
     location: Location,
@@ -56,7 +71,7 @@ struct Highlight {
 
 struct Location {
     chapter: Option<String>,
-    position: Option<String>,      // Opaque string, format varies by source
+    position: Option<String>,      // e.g., "Location 123"
 }
 
 enum Source {
@@ -67,7 +82,43 @@ enum Source {
 
 ## Data Sources
 
+### Kindle - Browser Scraper (Primary Method)
+
+**File:** `src/kindle/browser.rs`
+
+Uses `headless_chrome` crate to automate a real Chrome browser:
+
+1. Launches Chrome with persistent profile at `~/.local/share/bookexport/chrome_profile/`
+2. Navigates to `read.amazon.com/notebook`
+3. First run: waits for user to log in via visible browser window
+4. Subsequent runs: can use `--headless` flag for background operation
+5. Extracts book list from sidebar via JavaScript
+6. Clicks each book using native Chrome DevTools Protocol click
+7. Waits for content to change (detects by comparing first highlight text)
+8. Scrapes highlights via JavaScript DOM queries
+
+**Key Components:**
+- `AmazonRegion` - Region-specific URLs (us, uk, de, fr, es, it, jp, ca, au, in)
+- `BrowserConfig` - Headless mode, region, timeout, user data dir
+- `KindleBrowserScraper` - Main scraper with session persistence
+
+**CSS Selectors:**
+- Book list: `.kp-notebook-library-each-book` (id attribute = ASIN)
+- Book title: `h2.kp-notebook-searchable`
+- Book author: `p.kp-notebook-searchable`
+- Highlight text: `#highlight`
+- Note: `#note`
+- Location: `#kp-annotation-location`
+
+**Why browser automation?**
+- Amazon's Kindle Notebook is a React SPA that requires JavaScript
+- Cookie-based scraping failed with HTTP 400 errors on book pages
+- Native Chrome clicks properly trigger React event handlers
+- Session persistence means login only needed once
+
 ### Apple Books (macOS)
+
+**File:** `src/apple_books.rs`
 
 **Database Locations:**
 - Library: `~/Library/Containers/com.apple.iBooksX/Data/Documents/BKLibrary/BKLibrary*.sqlite`
@@ -78,31 +129,15 @@ enum Source {
 - `ZAEANNOTATION` - Highlights and notes
 
 **Important Notes:**
-- Timestamps are CoreData format (seconds since 2001-01-01). Convert with: `timestamp + 978307200` → Unix epoch
-- Books and annotations are linked by `ZASSETID` ↔ `ZANNOTATIONASSETID`
-- The code copies databases to temp location before reading to avoid SQLITE_BUSY errors
-
-**SQL for Books:**
-```sql
-SELECT ZASSETID, ZTITLE, ZAUTHOR, ZISFINISHED, ZDATEFINISHED
-FROM ZBKLIBRARYASSET
-WHERE ZTITLE IS NOT NULL
-```
-
-**SQL for Annotations:**
-```sql
-SELECT ZANNOTATIONUUID, ZANNOTATIONASSETID, ZANNOTATIONSELECTEDTEXT,
-       ZANNOTATIONNOTE, ZFUTUREPROOFING5, ZANNOTATIONLOCATION, ZANNOTATIONCREATIONDATE
-FROM ZAEANNOTATION
-WHERE ZANNOTATIONDELETED = 0
-  AND ZANNOTATIONSELECTEDTEXT IS NOT NULL
-  AND ZANNOTATIONSELECTEDTEXT != ''
-ORDER BY ZANNOTATIONASSETID, ZPLLOCATIONRANGESTART
-```
+- Timestamps are CoreData format (seconds since 2001-01-01). Convert: `timestamp + 978307200` → Unix epoch
+- Books and annotations linked by `ZASSETID` ↔ `ZANNOTATIONASSETID`
+- Databases copied to temp location before reading to avoid SQLITE_BUSY
 
 ### Kindle - My Clippings.txt
 
-**Location:** `/documents/My Clippings.txt` on Kindle device (via USB)
+**File:** `src/kindle/clippings.rs`
+
+**Location:** `/documents/My Clippings.txt` on Kindle device
 
 **Format:**
 ```
@@ -113,150 +148,59 @@ The actual highlighted text goes here...
 ==========
 ```
 
-**Parsing:**
-- Split by `==========` separator
-- Extract title/author from first line via regex: `^(.+) \((.+)\)$`
-- Parse location and date from second line
-- Remaining lines are the highlight text
+**Parsing:** Split by `==========`, extract title/author via regex, parse location from metadata line.
 
-### Kindle - Amazon Notebook Scraping
+### Kindle - Legacy Cookie Scraper
 
-**URL:** `https://read.amazon.com/notebook` (or regional variants)
+**File:** `src/kindle/scraper.rs`
 
-**Authentication:** User exports browser cookies in Netscape format after logging into Amazon.
-
-**CSS Selectors (from obsidian-kindle-plugin):**
-- Book list: `.kp-notebook-library-each-book`
-  - Title: `h2.kp-notebook-searchable`
-  - Author: `p.kp-notebook-searchable`
-  - ASIN: element `id` attribute
-- Highlights: `.a-row.a-spacing-base`
-  - Text: `#highlight`
-  - Note: `#note`
-  - Location: `#kp-annotation-location`
-- Pagination: `.kp-notebook-annotations-next-page-start`, `.kp-notebook-content-limit-state`
-
-**Regional Domains:**
-- US: `amazon.com`
-- UK: `amazon.co.uk`
-- DE: `amazon.de`
-- FR: `amazon.fr`
-- JP: `amazon.co.jp`
-- (and others)
-
-**Note:** The macOS Kindle app (`com.amazon.Lassen`) stores only position markers in its local database, NOT the highlight text. This is why web scraping or My Clippings.txt is needed for Kindle highlights.
-
-## CLI Usage
-
-```
-bookexport [OPTIONS]
-
-Options:
-    -o, --output <PATH>              Output path [default: ~/.local/share/bookexport/library.json]
-    -c, --config <PATH>              Config file path [default: ~/.config/bookexport/config.toml]
-    --apple-books-only               Only export from Apple Books
-    --kindle-clippings <PATH>        Path to Kindle's My Clippings.txt file
-    --kindle-cookies <PATH>          Path to exported Amazon cookies file (Netscape format)
-    --kindle-region <REGION>         Amazon region: us, uk, de, fr, jp, etc. [default: us]
-    --pretty                         Pretty-print JSON output
-    -v, --verbose                    Verbose logging
-    -h, --help                       Print help
-```
-
-**Examples:**
-```bash
-# Export Apple Books only
-bookexport --apple-books-only --pretty -o library.json
-
-# Export with Kindle clippings from device
-bookexport --kindle-clippings "/Volumes/Kindle/documents/My Clippings.txt"
-
-# Export with Amazon web scraping
-bookexport --kindle-cookies cookies.txt --kindle-region us
-
-# Full export with all sources
-bookexport --kindle-clippings clippings.txt --kindle-cookies cookies.txt --pretty
-```
-
-## Configuration File
-
-Optional TOML config at `~/.config/bookexport/config.toml`:
-
-```toml
-output_path = "~/.local/share/bookexport/library.json"
-
-[apple_books]
-enabled = true
-# library_db = "..."      # Override default path
-# annotation_db = "..."   # Override default path
-
-[kindle]
-enabled = true
-region = "us"
-# clippings_path = "..."  # Path to My Clippings.txt
-# cookies_path = "..."    # Path to Amazon cookies file
-```
+Cookie-based HTTP scraper (renamed to `LegacyAmazonRegion` to avoid conflicts). Not recommended - Amazon blocks direct URL navigation to book pages.
 
 ## Deduplication Logic
 
-1. **Book ID Generation:** `SHA256(lowercase(strip(title) + strip(author)))[:16]`
-2. **Book Merging:** When same book found in multiple sources:
-   - Combine `sources` vec
-   - Merge highlights, dedupe by normalized text content
-   - For `finished` status, `true` from any source wins
-   - Prefer earlier `finished_at` date
-3. **Highlight Deduplication:** Normalize text (lowercase, collapse whitespace) and compare
+**File:** `src/merge.rs`
+
+1. **Book ID:** `SHA256(lowercase(strip(title) + strip(author)))[:16]`
+2. **Book Merging:** Combine sources, merge highlights, dedupe by normalized text
+3. **Highlight Deduplication:** Normalize (lowercase, collapse whitespace), compare
 
 ## Dependencies
 
 Key crates:
+- `headless_chrome` - Browser automation via Chrome DevTools Protocol
 - `rusqlite` (bundled) - SQLite database access
 - `serde`, `serde_json` - JSON serialization
 - `chrono` - Timestamp handling
 - `clap` (derive) - CLI argument parsing
-- `reqwest` (blocking, cookies) - HTTP requests for web scraping
+- `reqwest` (blocking, cookies) - HTTP requests (legacy scraper)
 - `scraper` - HTML parsing with CSS selectors
 - `regex` - Text parsing
 - `sha2` - Book ID generation
-- `glob` - Finding database files
-- `toml` - Config file parsing
+- `uuid` - Highlight ID generation
+- `dirs` - Platform-specific directories
 
-## Building
-
-```bash
-# Debug build
-cargo build
-
-# Release build
-cargo build --release
-
-# Run directly
-cargo run -- --help
-```
-
-## Testing
+## Building & Testing
 
 ```bash
-# Run tests
-cargo test
-
-# Test with your Apple Books
-./target/release/bookexport --verbose --pretty --apple-books-only -o /tmp/test.json
+cargo build              # Debug build
+cargo build --release    # Release build
+cargo test               # Run tests
+cargo run -- --help      # Run with args
 ```
+
+## Session Persistence
+
+Browser sessions stored at: `~/.local/share/bookexport/chrome_profile/`
+
+After first login, use `--headless` for background operation. Sessions expire after ~2-4 weeks.
 
 ## Known Limitations
 
-1. **Kindle macOS App:** The local database only stores position markers, not highlight text. Use My Clippings.txt or web scraping instead.
+1. **Kindle macOS App:** Local database only stores position markers, not highlight text
+2. **Amazon Copyright Limits:** Highlights truncated after 10-20% of book content
+3. **Session Expiry:** Amazon sessions expire; re-run without `--headless` to re-authenticate
+4. **macOS Only:** Apple Books extraction requires macOS
 
-2. **Amazon Copyright Limits:** Amazon truncates highlights after 10-20% of a book's content is highlighted.
+## Test Results
 
-3. **Web Scraping Fragility:** Amazon may show CAPTCHAs or rate-limit automated access. Cookies expire and need re-export.
-
-4. **My Clippings.txt Language:** The parser assumes English-language format. Different Kindle language settings produce different date formats.
-
-## Future Improvements
-
-- Incremental sync (track `last_export_at` and filter by `created_at`)
-- Support for more sources (Kobo, Google Play Books)
-- Better date parsing for international My Clippings.txt formats
-- Export to other formats (Markdown, CSV)
+Last test run: **84 books, 2,686 highlights** from Kindle via browser scraper.
