@@ -34,7 +34,7 @@ fn copy_to_temp(source: &PathBuf) -> Result<PathBuf, AppleBooksError> {
         .unwrap_or_default()
         .to_string_lossy()
         .to_string();
-    let temp_path = temp_dir.join(format!("bookexport_{}", file_name));
+    let temp_path = temp_dir.join(format!("readingsync_{}", file_name));
 
     fs::copy(source, &temp_path).map_err(AppleBooksError::TempCopyFailed)?;
 

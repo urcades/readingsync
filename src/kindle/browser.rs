@@ -125,7 +125,7 @@ impl KindleBrowserScraper {
         if config.user_data_dir.is_none() {
             let data_dir = dirs::data_local_dir()
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
-                .join("bookexport")
+                .join("readingsync")
                 .join("chrome_profile");
 
             // Create directory if it doesn't exist

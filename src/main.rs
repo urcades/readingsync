@@ -1,4 +1,4 @@
-use bookexport::{
+use readingsync::{
     apple_books, kindle,
     model::{Library, Source},
     Config, Error,
@@ -8,9 +8,9 @@ use clap::{Parser, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
-/// Export reading highlights from Apple Books and Kindle
+/// Sync reading highlights from Kindle and Apple Books
 #[derive(Parser, Debug)]
-#[command(name = "bookexport")]
+#[command(name = "readingsync")]
 #[command(author, version, about, long_about = None)]
 struct Args {
     #[command(subcommand)]
@@ -72,7 +72,7 @@ fn run() -> Result<(), Error> {
     let output_path = args.output.unwrap_or_else(|| {
         dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("bookexport")
+            .join("readingsync")
             .join("library.json")
     });
 
@@ -146,7 +146,7 @@ fn run() -> Result<(), Error> {
 }
 
 /// Run Kindle browser-based sync
-fn run_kindle_browser_sync(region: &str, headless: bool, verbose: bool) -> Result<Vec<bookexport::Book>, Error> {
+fn run_kindle_browser_sync(region: &str, headless: bool, verbose: bool) -> Result<Vec<readingsync::Book>, Error> {
     eprintln!("Starting Kindle sync via browser...");
 
     let region = kindle::AmazonRegion::from_code(region).map_err(Error::Kindle)?;
@@ -172,7 +172,7 @@ fn run_kindle_browser_sync(region: &str, headless: bool, verbose: bool) -> Resul
 }
 
 /// Run Apple Books export
-fn run_apple_books_export(config: &Config, verbose: bool) -> Result<Vec<bookexport::Book>, Error> {
+fn run_apple_books_export(config: &Config, verbose: bool) -> Result<Vec<readingsync::Book>, Error> {
     if verbose {
         eprintln!("Extracting from Apple Books...");
     }
@@ -191,7 +191,7 @@ fn run_apple_books_export(config: &Config, verbose: bool) -> Result<Vec<bookexpo
 }
 
 /// Run My Clippings.txt import
-fn run_clippings_import(path: &PathBuf, verbose: bool) -> Result<Vec<bookexport::Book>, Error> {
+fn run_clippings_import(path: &PathBuf, verbose: bool) -> Result<Vec<readingsync::Book>, Error> {
     if verbose {
         eprintln!("Parsing Kindle clippings from {}...", path.display());
     }

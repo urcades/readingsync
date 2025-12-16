@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
-/// Main error type for the bookexport application
+/// Main error type for the readingsync application
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("Apple Books error: {0}")]

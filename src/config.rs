@@ -83,7 +83,7 @@ impl Default for KindleConfig {
 fn default_output_path() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("bookexport")
+        .join("readingsync")
         .join("library.json")
 }
 
@@ -91,7 +91,7 @@ fn default_output_path() -> PathBuf {
 pub fn default_config_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("bookexport")
+        .join("readingsync")
         .join("config.toml")
 }
 

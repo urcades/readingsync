@@ -2,12 +2,12 @@
 
 ## What is this project?
 
-`bookexport` is a Rust CLI tool that extracts reading highlights from Kindle and Apple Books on macOS, merges/deduplicates books across sources, and outputs a unified JSON file.
+`readingsync` is a Rust CLI tool that extracts reading highlights from Kindle and Apple Books on macOS, merges/deduplicates books across sources, and outputs a unified JSON file.
 
 ## Project Structure
 
 ```
-bookexport/
+readingsync/
 ├── Cargo.toml              # Dependencies and project metadata
 ├── Cargo.lock              # Locked dependency versions
 ├── README.md               # User documentation
@@ -31,13 +31,13 @@ bookexport/
 
 ```bash
 # Primary: Browser-based Kindle sync
-bookexport kindle --region us [--headless] [--verbose]
+readingsync kindle --region us [--headless] [--verbose]
 
 # Apple Books export
-bookexport apple-books [--verbose]
+readingsync apple-books [--verbose]
 
 # Kindle device clippings import
-bookexport clippings <PATH> [--verbose]
+readingsync clippings <PATH> [--verbose]
 ```
 
 Global flags: `-o/--output`, `--pretty`, `-v/--verbose`
@@ -88,7 +88,7 @@ enum Source {
 
 Uses `headless_chrome` crate to automate a real Chrome browser:
 
-1. Launches Chrome with persistent profile at `~/.local/share/bookexport/chrome_profile/`
+1. Launches Chrome with persistent profile at `~/.local/share/readingsync/chrome_profile/`
 2. Navigates to `read.amazon.com/notebook`
 3. First run: waits for user to log in via visible browser window
 4. Subsequent runs: can use `--headless` flag for background operation
@@ -190,7 +190,7 @@ cargo run -- --help      # Run with args
 
 ## Session Persistence
 
-Browser sessions stored at: `~/.local/share/bookexport/chrome_profile/`
+Browser sessions stored at: `~/.local/share/readingsync/chrome_profile/`
 
 After first login, use `--headless` for background operation. Sessions expire after ~2-4 weeks.
 

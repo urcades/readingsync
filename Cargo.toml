@@ -1,8 +1,8 @@
 [package]
-name = "bookexport"
+name = "readingsync"
 version = "0.1.0"
 edition = "2021"
-description = "Export reading highlights from Apple Books and Kindle"
+description = "Sync reading highlights from Kindle and Apple Books"
 license = "MIT"
 
 [dependencies]

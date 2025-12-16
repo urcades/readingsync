@@ -1,4 +1,4 @@
-# bookexport
+# readingsync
 
 A Rust CLI tool to export reading highlights from Kindle and Apple Books on macOS.
 
@@ -19,7 +19,7 @@ cd readingsync
 cargo build --release
 ```
 
-The binary will be at `./target/release/bookexport`.
+The binary will be at `./target/release/readingsync`.
 
 ### Requirements
 
@@ -30,7 +30,7 @@ The binary will be at `./target/release/bookexport`.
 ## Usage
 
 ```
-bookexport [OPTIONS] [COMMAND]
+readingsync [OPTIONS] [COMMAND]
 
 Commands:
   kindle       Sync highlights from Kindle via browser (recommended)
@@ -39,7 +39,7 @@ Commands:
   help         Print help for a command
 
 Options:
-  -o, --output <PATH>  Output path [default: ~/.local/share/bookexport/library.json]
+  -o, --output <PATH>  Output path [default: ~/.local/share/readingsync/library.json]
       --pretty         Pretty-print JSON output
   -v, --verbose        Show detailed progress
   -h, --help           Print help
@@ -54,10 +54,10 @@ Scrapes highlights directly from Amazon's Kindle Notebook website using browser 
 
 ```bash
 # First run - opens browser for login
-bookexport kindle --region us --verbose
+readingsync kindle --region us --verbose
 
 # Subsequent runs - headless mode (no browser window)
-bookexport kindle --region us --headless --verbose
+readingsync kindle --region us --headless --verbose
 ```
 
 **Options:**
@@ -76,7 +76,7 @@ bookexport kindle --region us --headless --verbose
 Extracts highlights from the local Apple Books databases on macOS.
 
 ```bash
-bookexport apple-books --verbose --pretty
+readingsync apple-books --verbose --pretty
 ```
 
 **Database locations:**
@@ -89,10 +89,10 @@ Parses the `My Clippings.txt` file from a physical Kindle device.
 
 ```bash
 # From mounted Kindle
-bookexport clippings "/Volumes/Kindle/documents/My Clippings.txt"
+readingsync clippings "/Volumes/Kindle/documents/My Clippings.txt"
 
 # From copied file
-bookexport clippings ~/Downloads/My\ Clippings.txt
+readingsync clippings ~/Downloads/My\ Clippings.txt
 ```
 
 ## Output Format
@@ -132,27 +132,27 @@ All commands output JSON in this format:
 
 ```bash
 # Sync Kindle highlights (first time - visible browser)
-bookexport kindle --region us --verbose --pretty -o highlights.json
+readingsync kindle --region us --verbose --pretty -o highlights.json
 
 # Sync Kindle highlights (after login - background)
-bookexport kindle --region us --headless --pretty
+readingsync kindle --region us --headless --pretty
 
 # Export Apple Books only
-bookexport apple-books --pretty -o apple-highlights.json
+readingsync apple-books --pretty -o apple-highlights.json
 
 # Import from Kindle device
-bookexport clippings /Volumes/Kindle/documents/My\ Clippings.txt --pretty
+readingsync clippings /Volumes/Kindle/documents/My\ Clippings.txt --pretty
 
 # Default behavior (runs Kindle sync)
-bookexport --verbose
+readingsync --verbose
 ```
 
 ## Configuration
 
-An optional TOML config file can be placed at `~/.config/bookexport/config.toml`:
+An optional TOML config file can be placed at `~/.config/readingsync/config.toml`:
 
 ```toml
-output_path = "~/.local/share/bookexport/library.json"
+output_path = "~/.local/share/readingsync/library.json"
 
 [apple_books]
 enabled = true
@@ -177,7 +177,7 @@ The tool uses the `headless_chrome` crate to automate a real Chrome browser:
 5. Clicks each book and scrapes its highlights
 6. Outputs unified JSON
 
-Session data is stored in `~/.local/share/bookexport/chrome_profile/`.
+Session data is stored in `~/.local/share/readingsync/chrome_profile/`.
 
 ### Apple Books
 
