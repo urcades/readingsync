@@ -11,20 +11,41 @@ A Rust CLI tool to export reading highlights from Kindle and Apple Books on macO
 
 ## Installation
 
-### From Source
+### Quick Install (via cargo)
 
 ```bash
+# Clone and install to ~/.cargo/bin/
+git clone https://github.com/urcades/readingsync.git
+cd readingsync
+cargo install --path .
+```
+
+This installs `readingsync` to `~/.cargo/bin/`. Make sure this directory is in your PATH:
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc if not already present
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+### Manual Install
+
+```bash
+# Build release binary
 git clone https://github.com/urcades/readingsync.git
 cd readingsync
 cargo build --release
-```
 
-The binary will be at `./target/release/readingsync`.
+# Copy to a location in your PATH
+cp target/release/readingsync /usr/local/bin/
+
+# Or symlink it
+ln -s $(pwd)/target/release/readingsync /usr/local/bin/readingsync
+```
 
 ### Requirements
 
 - macOS (for Apple Books support)
-- Rust toolchain
+- [Rust toolchain](https://rustup.rs/) (for building)
 - Chrome/Chromium (for Kindle browser sync)
 
 ## Usage
